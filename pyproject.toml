@@ -1,0 +1,15 @@
+[project]
+name="Atiny"
+version="0.0.1"
+authors=[{name="Psyche Halo", email="Psyche@WinsGod.com"},]
+description="Atiny is a gradient based PyTorch optimizer. Atiny uses half of Adam's memory to achieve results that are not inferior to Adam. "
+readme = "README.md"
+requires-python=">=3.8"
+classifiers=["Programming Language :: Python :: 3", "Operating System :: OS Independent",]
+dependencies=["torch >= 1.7.0",]
+keywords = ["tiny", "Atiny", "PyTorch", "optimizer", "AI", "neural", "NN", "memory",]
+[project.urls]
+Homepage="https://github.com/PsycheHalo/Atiny"
+Issues="https://github.com/PsycheHalo/Atiny/issues"
+[metadata]
+license_expression = "MPL-2.0"
