@@ -13,6 +13,7 @@ class Atiny(Optimizer):
                  smooth: Union[float, Tensor] = 10,
                  weight_decay:  Union[float, Tensor] = 0,
                  ldr: Union[float, Tensor] = 10,
+                 autoIndividuateLR=False, #自动个性化学习率,目前的版本是根据维度尺寸自动计算.
                  ):
         
         if not lr>0:
@@ -24,11 +25,18 @@ class Atiny(Optimizer):
         if not ldr>=0:
             raise ValueError(f'Invalid 学习衰减率: {lr}')
         
-        defaults = dict(lr=lr,smooth=smooth,weight_decay=weight_decay,ldr=ldr)
+        defaults = dict(lr=lr,smooth=smooth,weight_decay=weight_decay,ldr=ldr,autoIndividuateLR=autoIndividuateLR)
         super().__init__(params, defaults)
 
     def _norm(self,x):
-        return torch.linalg.norm(x.view(-1),ord=2,dim=0,keepdim=False)
+        return torch.linalg.norm(x,ord=2,dim=0,keepdim=False)
+    
+    def _concord(self,x1,x2):
+        concord=torch.nn.functional.cosine_similarity(x1.view(-1),x2.view(-1),dim=0,eps=0)
+        concord=(concord.asin()*2/math.pi+1).clamp(max=1,min=0)
+        concord[~torch.isfinite(concord)]=1
+        
+        return concord
 
     def __setstate__(self, state):
         super().__setstate__(state)
@@ -85,7 +93,17 @@ class Atiny(Optimizer):
                     state['flat']=((state['flat']*smooth).add_(p.grad)).div_(smooth+1)
                     state['flat'][~torch.isfinite(state['flat'])]=0
                     
-                    d=(state['flat'].sign().mul_(k)).mul_(group['lr']*state['warm'])
+                    if group['autoIndividuateLR']:
+                        n0Dim=0
+                        for d in p.size():
+                            if d>1:
+                                n0Dim+=1;
+                        n0Dim=min(n0Dim,2)
+                        deDim=1/(p.numel()**(0.5**n0Dim))
+                    else:
+                        deDim=1
+                    
+                    d=(state['flat'].sign().mul_(k)).mul_(group['lr']*state['warm']*deDim)
                     d[~torch.isfinite(d)]=0
                     dNorm=self._norm(d)
                     dNorm[~torch.isfinite(dNorm)]=0
@@ -93,7 +111,7 @@ class Atiny(Optimizer):
                     p.data-=d
                     
                     if group['weight_decay']>0:
-                        wd=group['weight_decay']/math.sqrt(p.numel())
+                        wd=group['weight_decay']*deDim
                         norm=self._norm(p.data)*wd
                         wdk=norm.asinh()/norm
                         wdk[~torch.isfinite(wdk)]=1
@@ -103,7 +121,7 @@ class Atiny(Optimizer):
                     p.data[~torch.isfinite(p.data)]=0
                     
                     if group['ldr']>0:
-                        state['dNormAccumulat']+=group['ldr']*dNorm/math.sqrt(d.numel())
+                        state['dNormAccumulat']+=group['ldr']*dNorm*deDim
                     
                     
         return loss
