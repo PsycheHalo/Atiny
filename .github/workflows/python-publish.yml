@@ -11,7 +11,7 @@ on:
 # 在这里声明需要的权限，传给中心仓库
 permissions:
   contents: write         # 用于 actions/checkout + push bump
-  id-token: write         # 用于 pypa/github-action-pypi-publish
+  id-token: write         # 用于 pypa/gh-action-pypi-publish
 
 jobs:
   call-upload:
