@@ -1,19 +1,132 @@
 # This workflow will upload a Python Package to PyPI when a release is created
-# (调用中心仓库的可复用工作流)
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python#publishing-to-package-registries
+
+# This workflow uses actions that are not certified by GitHub.
+# They are provided by a third-party and are governed by
+# separate terms of service, privacy policy, and support
+# documentation.
 
 name: Upload Python Package
 
-# 响应 Release 发布事件
 on:
   release:
     types: [published]
 
-# 在这里声明需要的权限，传给中心仓库
 permissions:
-  contents: write         # 用于 actions/checkout + push bump
-  id-token: write         # 用于 pypa/gh-action-pypi-publish
+  contents: write
 
 jobs:
-  call-upload:
-    # 调用 central-repo 中的可复用 workflow
-    uses: PsycheHalo/pypi-publish-reusable/.github/workflows/pypi-publish-reusable.yml@main
+  release-build:
+    runs-on: ubuntu-latest
+    outputs:
+      project_name: ${{ steps.metadata.outputs.name }}
+      version:      ${{ steps.metadata.outputs.version }}
+      
+    steps:
+      # 1. 检出完整仓库（必须拿到所有历史以便 push）
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # 指定检出到发布时基于的分支（避免 detached HEAD）
+          ref: ${{ github.event.release.target_commitish }}
+
+      # 2. 配置 Git 用户
+      - name: Configure Git for version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      # 3. 从 Release tag 自动提取版本并更新 pyproject.toml
+      - name: Bump version in pyproject.toml
+        env:
+          RAW_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          VERSION="${RAW_TAG#v}"
+          echo "🔖 Bumping version to $VERSION"
+          echo "📄 Before replacement:"
+          sed -n 's/^[[:space:]]*version[[:space:]]*=.*$/&/p' pyproject.toml
+          
+          # 这个正则能匹配任意缩进下的 version = "…"
+          sed -i -E \
+            -e "s/^([[:space:]]*version[[:space:]]*=[[:space:]]*)\"[^\"]+\"/\\1\"${VERSION}\"/" \
+            pyproject.toml
+          
+          echo "📄 After replacement:"
+          sed -n 's/^[[:space:]]*version[[:space:]]*=.*$/&/p' pyproject.toml
+
+      # 4. 提交并推送修改
+      - name: Commit and push version bump
+        env:
+          RAW_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          VERSION="${RAW_TAG#v}"
+          git add pyproject.toml
+          # 仅在有变更时才提交
+          if ! git diff --cached --quiet; then
+            CMSG="chore: bump version to $VERSION"
+            echo "$CMSG"
+            git commit -m "$CMSG"
+            # 推向同一个分支，而不是 Tag
+            git push origin HEAD:${{ github.event.release.target_commitish }}
+          else
+            echo "No version change detected, skipping commit."
+          fi
+
+      - name: Extract project metadata
+        id: metadata
+        run: |
+          NAME=$(grep '^name[[:space:]]*=' pyproject.toml \
+                 | sed -E 's/name[[:space:]]*=[[:space:]]*"([^"]+)"/\1/')
+          VERSION=$(grep '^version[[:space:]]*=' pyproject.toml \
+                   | sed -E 's/version[[:space:]]*=[[:space:]]*"([^"]+)"/\1/')
+          echo "name=$NAME"      >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Build release distributions
+        run: |
+          # NOTE: put your own distribution build steps here.
+          python -m pip install build
+          python -m build
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dists
+          path: dist/
+
+  pypi-publish:
+    runs-on: ubuntu-latest
+    needs:
+      - release-build
+    permissions:
+      # IMPORTANT: this permission is mandatory for trusted publishing
+      id-token: write
+
+    # Dedicated environments with protections for publishing are strongly recommended.
+    # For more information, see: https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment#deployment-protection-rules
+    environment:
+      name: pypi
+      # OPTIONAL: uncomment and update to include your PyPI project URL in the deployment status:
+      # url: https://pypi.org/p/YOURPROJECT
+      #
+      # ALTERNATIVE: if your GitHub Release name is the PyPI project version string
+      # ALTERNATIVE: exactly, uncomment the following line instead:
+      # url: https://pypi.org/project/YOURPROJECT/${{ github.event.release.name }}
+      url: https://pypi.org/project/${{ needs.release-build.outputs.project_name }}/${{ needs.release-build.outputs.version }}
+
+    steps:
+      - name: Retrieve release distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: release-dists
+          path: dist/
+
+      - name: Publish release distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
