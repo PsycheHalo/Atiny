@@ -1,6 +1,6 @@
 [project]
 name="Atiny"
-version="0.0.2"
+version="0.0.3"
 authors=[{name="Psyche Halo", email="Psyche@WinsGod.com"},]
 description="Atiny is a gradient based PyTorch optimizer. Atiny uses half of Adam's memory to achieve results that are not inferior to Adam. "
 readme = "README.md"
