@@ -29,7 +29,7 @@ class Atiny(Optimizer):
         super().__init__(params, defaults)
 
     def _norm(self,x):
-        return torch.linalg.norm(x,ord=2,keepdim=False)
+        return torch.linalg.norm(x,keepdim=False)
     
     def _concord(self,x1,x2):
         concord=torch.nn.functional.cosine_similarity(x1.view(-1),x2.view(-1),dim=0,eps=0)
@@ -125,4 +125,5 @@ class Atiny(Optimizer):
                     
                     
         return loss
+
 
